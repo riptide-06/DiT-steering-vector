@@ -240,3 +240,41 @@ Neutral activation = mean across all 5 neutral prompt captures (per step for con
 - Result grids: `sd3/style_unlearning_results/exp7a_multi_anchor_broad.png`, `exp7b_multi_anchor_refined.png`
 
 ---
+
+---
+
+## Experiment #8 — Additive "photograph" direction (negative result)
+
+**Date:** 2026-04-27
+**Author:** Tarun (fork: riptide-06/DiT-steering-vector, branch: tarun/style-unlearning)
+
+### Hypothesis
+Exp #7 cleanly removes watercolor but lands in painterly territory, not photorealism. Hypothesis: instead of subtracting watercolor, *add* a positive direction toward "photograph." Direction = `photograph − watercolor`, applied with `+= α * proj * d`.
+
+### Config
+| Parameter | Value |
+|---|---|
+| `TARGET_PROMPT` | `"a photograph of a landscape"` |
+| `CONCEPT_PROMPT` | `"a landscape in watercolor style"` |
+| `GEN_PROMPT` | `"a landscape in watercolor style"` |
+| Direction | `target − concept`, normalised per encoder |
+| Hook op | `+=` instead of `-=` on T5 and CLIP-G |
+
+Two runs:
+- **#8a** unclamped T5 projection. `ALPHAS_T = [0, 50, 150, 400]`, `ALPHAS_G = [0, 1, 3, 6]`.
+- **#8b** clamped T5 projection (`min=0`). `ALPHAS_T = [0, 20, 50, 100]`, `ALPHAS_G = [0, 2, 5, 10]`.
+
+### Observations
+- **#8a**: low T5 alpha (50) shifted output to autumn/oil-painting. T5 ≥ 150 destroyed the image into abstract texture. CLIP-G additive had near-zero effect across the row — base pooled embedding has small projection onto the photograph direction, so additive kick is negligible.
+- **#8b**: clamping to `min=0` made the intervention a no-op — every cell identical to baseline watercolor. The watercolor activation projects *negatively* onto the `photograph − watercolor` direction (it points away from photograph), so clamping zeros out all projections.
+
+### Diagnosis
+The `photograph − watercolor` direction in T5 space does not point toward "photograph" in any useful sense. Pushing along it yields oil-painting drift (same failure mode as Exp #2/#6 with subtractive steering) before destroying the image. T5 in SD3 does not appear to represent photo-vs-painted as a cleanly extractable linear axis from this prompt pair.
+
+### Key takeaway
+Additive linear steering toward "photograph" via simple prompt-difference directions **does not reach photorealism** on SD3 with this technique. Photorealism likely requires a different intervention: a different layer (e.g. attention projections, MM-DiT joint blocks rather than encoder embeddings), a learned probe direction, or modifying GEN_PROMPT itself rather than steering activations.
+
+### Status
+Negative result — closing this branch of investigation. Recommended next direction: drop GEN_PROMPT's "in watercolor style" tag and steer to suppress residual watercolor association on the bare prompt, OR try MM-DiT block-level interventions as in `experiments/sd3.5/`.
+
+---
