@@ -174,3 +174,69 @@ Isolate T5's contribution to style removal. Determine whether T5 alone can steer
 - TBD
 
 ---
+
+---
+
+## Experiment #7 — Multi-anchor neutral prompt
+
+**Date:** 2026-04-27
+**Author:** Tarun (fork: riptide-06/DiT-steering-vector, branch: tarun/style-unlearning)
+
+### Hypothesis
+Exp #6 showed T5-only steering successfully removes watercolor but lands in oil-painting territory rather than photorealism. The diagnosis: the direction `concept − single_neutral` doesn't point toward "no style," it points toward whatever is mathematically opposite of watercolor in T5 embedding space — which appears to be oil painting.
+
+Fix: replace the single neutral with the **mean of multiple non-watercolor anchor prompts**. This should isolate the watercolor component without aiming the direction at any specific competing style.
+
+### Config
+| Parameter | Value |
+|---|---|
+| `CONCEPT_PROMPT` | `"a landscape in watercolor style"` |
+| `NEUTRAL_PROMPTS` | `["a landscape", "a photograph of a landscape", "a landscape in oil painting style", "a landscape, pencil sketch", "a landscape, digital art"]` |
+| `GEN_PROMPT` | `"a landscape in watercolor style"` |
+| `NUM_STEPS` | `28` |
+| `GUIDANCE_SCALE` | `7.0` |
+| `SEED` | `42` |
+
+Neutral activation = mean across all 5 neutral prompt captures (per step for context, single vector for pooled).
+
+### #7a — Broad sweep
+| Parameter | Values |
+|---|---|
+| `ALPHAS_C` | `[0]` |
+| `ALPHAS_T` | `[0, 100, 300, 600]` |
+| `ALPHAS_G` | `[0, 2, 4, 6]` |
+
+**Observations**
+- Cells with `t≥300, g≥4` go off-manifold — magenta/yellow color blobs, not images.
+- Middle cells (around `t=300, g=2`) look like coherent realistic-ish landscapes.
+- No oil-painting drift — the failure mode from Exp #6 is gone.
+- CLIP-G alone (top row, t=0) shifts the image meaningfully — it is doing real work, not just clipped to zero.
+
+### #7b — Refined sweep in working region
+| Parameter | Values |
+|---|---|
+| `ALPHAS_C` | `[0]` |
+| `ALPHAS_T` | `[100, 200, 300, 400]` |
+| `ALPHAS_G` | `[0, 1, 2, 3]` |
+
+**Observations**
+- All 16 cells stay on-manifold — no destruction.
+- Watercolor washes are gone across the whole grid.
+- Best-looking cells: `t=200 g=2`, `t=300 g=0`, `t=300 g=1` — coherent landscapes with real depth and atmospheric perspective.
+- Outputs are still painterly (digital-painting-like), not photographs. SD3's prior on `"a landscape"` appears to be itself painterly, so direction subtraction alone may not reach photorealism.
+
+### Key takeaways
+- **Multi-anchor neutral fixes the oil-painting drift.** Averaging 5 non-watercolor anchors removes the watercolor component without biasing the direction toward any specific other style.
+- **Working region for this technique**: roughly `t ∈ [100, 400]`, `g ∈ [0, 3]`, with `c = 0`. Beyond `g=3` paired with `t≥300` images go off-manifold.
+- **Limitation**: outputs are non-watercolor but still stylized. Reaching true photorealism likely needs a positive "photograph" target rather than just subtracting watercolor, or modifying GEN_PROMPT itself.
+
+### Next steps
+- Try **adding** a positive direction toward `"photograph of a landscape"` rather than only subtracting watercolor.
+- Test with `GEN_PROMPT = "a landscape"` (no style word) to separate prior-painterly-ness from explicit-prompt-painterly-ness.
+- Consider running on UnlearnCanvas benchmark with multi-anchor approach to see if the gain generalizes across style-content pairs.
+
+### Artifacts
+- Code: `sd3/sd3_style_unlearning.ipynb` on branch `tarun/style-unlearning` of fork `riptide-06/DiT-steering-vector`
+- Result grids: `sd3/style_unlearning_results/exp7a_multi_anchor_broad.png`, `exp7b_multi_anchor_refined.png`
+
+---
